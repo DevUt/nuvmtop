@@ -14,7 +14,6 @@ int check_colors() {
     getch();
     return -1;
   }
-  genColorPairs();
   return 0;
 }
 
@@ -25,11 +24,13 @@ void exit_prog(int exit_code) {
 
 int main() {
   initscr();
+  cbreak();
   noecho();
 
   if (0 > check_colors()) {
     exit_prog(EXIT_FAILURE);
   }
+  start_color();
   keypad(stdscr, true);
   refresh();
 
@@ -70,8 +71,14 @@ int main() {
       if (currentFocusedWindow == menuBar.get()) {
         std::string currentSelected = menuBar->getCurrentSelectedOption();
         if (currentSelected == windowNames[0]) {
+          if (currentFocusedWindow == uvmTopWin.get())
+            continue;
+          wclear(currentContentWindow->getWindow());
           currentContentWindow = uvmTopWin.get();
         } else if (currentSelected == windowNames[1]) {
+          if (currentFocusedWindow == cIWin.get())
+            continue;
+          wclear(currentContentWindow->getWindow());
           currentContentWindow = cIWin.get();
         }
         currentContentWindow->display();

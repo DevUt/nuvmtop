@@ -44,48 +44,58 @@ int get_uvm_fd(int pid) {
   return nvidia_uvm_fd;
 }
 
-int compute_output(void *arg) {
+void run() { UVM_TOOLS_GET_UVM_PIDS_PARAMS ioctl_input; }
 
-  control_fetch_params *process = (control_fetch_params *)arg;
-  uuid *uuids = (uuid *)calloc(NVIDIA_MAX_PROCESSOR, sizeof(uuid));
+class DataPuller {
+private:
+  /**
+   * @brief This computes all the parameters for a GIVEN process
+   *
+   * @param[inout] arg Expected to provide pid of the process to compute the
+   * values
+   * @return -1 on error else arg will contain the param values
+   */
+  int compute_parameters() {
 
-  UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS event_tracker;
-  UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS ioctl_input;
-  UVM_TOOLS_GET_CURRENT_COUNTER_VALUES_PARAMS current_value_fetch;
-  int pid = process->pid;
-  int j = process->pid;
-  int pid_fd = syscall(SYS_pidfd_open, process->pid, 0);
+    control_fetch_params *process = (control_fetch_params *)arg;
+    uuid *uuids = (uuid *)calloc(NVIDIA_MAX_PROCESSOR, sizeof(uuid));
 
-  int process_uvm_fd = get_uvm_fd(process->pid);
+    UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS event_tracker;
+    UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS ioctl_input;
+    UVM_TOOLS_GET_CURRENT_COUNTER_VALUES_PARAMS current_value_fetch;
+    int pid = process->pid;
+    int pid_fd = syscall(SYS_pidfd_open, process->pid, 0);
 
-  if (process_uvm_fd == -1) {
-    // printf("some error happen.....");
-    return -1;
-  }
+    int process_uvm_fd = get_uvm_fd(process->pid);
 
-  UVM_TOOLS_ENABLE_COUNTERS_PARAMS counter_enable;
+    if (process_uvm_fd == -1) {
+      return -1;
+    }
 
-  counter_enable.counterTypeFlags =
-      UVM_COUNTER_NAME_FLAG_BYTES_XFER_HTD |
-      UVM_COUNTER_NAME_FLAG_BYTES_XFER_DTH |
-      UVM_COUNTER_NAME_FLAG_CPU_PAGE_FAULT_COUNT |
-      UVM_COUNTER_NAME_FLAG_GPU_PAGE_FAULT_COUNT |
-      UVM_COUNTER_NAME_FLAG_GPU_EVICTION_COUNT |
-      UVM_COUNTER_NAME_FLAG_GPU_RESIDENT_COUNT |
-      UVM_COUNTER_NAME_FLAG_CPU_RESIDENT_COUNT |
-      UVM_COUNTER_NAME_FLAG_GPU_MEMORY_ALLOCATED |
-      UVM_COUNTER_NAME_FLAG_OTHER_PROCESS_GPU_MEMORY_EVICTED |
-      UVM_COUNTER_NAME_THRASHING_PAGES;
+    UVM_TOOLS_ENABLE_COUNTERS_PARAMS counter_enable;
 
-  ioctl_input.tablePtr = (unsigned long)uuids;
-  volatile int process_fd = syscall(SYS_pidfd_getfd, pid_fd, process_uvm_fd, 0);
-  ioctl_input.uvmFd = process_fd;
-  int uvm_tools_fd[NVIDIA_MAX_PROCESSOR + 1];
+    counter_enable.counterTypeFlags =
+        UVM_COUNTER_NAME_FLAG_BYTES_XFER_HTD |
+        UVM_COUNTER_NAME_FLAG_BYTES_XFER_DTH |
+        UVM_COUNTER_NAME_FLAG_CPU_PAGE_FAULT_COUNT |
+        UVM_COUNTER_NAME_FLAG_GPU_PAGE_FAULT_COUNT |
+        UVM_COUNTER_NAME_FLAG_GPU_EVICTION_COUNT |
+        UVM_COUNTER_NAME_FLAG_GPU_RESIDENT_COUNT |
+        UVM_COUNTER_NAME_FLAG_CPU_RESIDENT_COUNT |
+        UVM_COUNTER_NAME_FLAG_GPU_MEMORY_ALLOCATED |
+        UVM_COUNTER_NAME_FLAG_OTHER_PROCESS_GPU_MEMORY_EVICTED |
+        UVM_COUNTER_NAME_THRASHING_PAGES;
 
-  uvm_tools_fd[0] = openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
-  ioctl(uvm_tools_fd[0], UVM_IOCTL_TOOLS_GET_GPUs_UUID, (void *)&ioctl_input);
+    ioctl_input.tablePtr = (unsigned long)uuids;
+    volatile int process_fd =
+        syscall(SYS_pidfd_getfd, pid_fd, process_uvm_fd, 0);
+    ioctl_input.uvmFd = process_fd;
+    int uvm_tools_fd[NVIDIA_MAX_PROCESSOR + 1];
 
-  for (; j > 0; j = process->pid) {
+    uvm_tools_fd[0] =
+        openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
+    ioctl(uvm_tools_fd[0], UVM_IOCTL_TOOLS_GET_GPUs_UUID, (void *)&ioctl_input);
+
     for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
 
       if (uuids[i].uuid[0] && !process->is_event_tracker_setup[i]) {
@@ -114,6 +124,10 @@ int compute_output(void *arg) {
               (void *)&counter_enable);
       }
     }
+    return 0;
   }
-  return 0;
-}
+
+public:
+  enum { USABLE, IN_ERROR } currentStatus;
+  DataPuller() {}
+};

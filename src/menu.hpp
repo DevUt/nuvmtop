@@ -25,7 +25,7 @@ public:
     menuOptions.insert(menuOptions.end(), vec.begin(), vec.end());
   }
 
-  void display() {
+  void display() override {
     if (menuOptions.size() == 0) {
       return;
     }
