@@ -1,6 +1,7 @@
 #pragma once
 #include "base_win.hpp"
 #include "common.hpp"
+#include <memory>
 #include <ncurses.h>
 #include <string>
 
@@ -16,7 +17,8 @@ public:
     getmaxyx(getWindow(), maxY, maxX);
     draw_rectangle(getWindow(), 0, 0, maxY, maxX);
     std::string focusString = "Currently in work";
-    mvwprintw(getWindow(), maxY/2, maxX/2 - focusString.length()/2, "%s", focusString.c_str());
+    mvwprintw(getWindow(), maxY / 2, maxX / 2 - focusString.length() / 2, "%s",
+              focusString.c_str());
     wrefresh(getWindow());
   }
 

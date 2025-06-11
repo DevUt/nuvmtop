@@ -4,14 +4,20 @@
 #include "menu.hpp"
 #include "uvmtopWin.hpp"
 
+#include <bits/getopt_core.h>
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
+#include <fstream>
 #include <getopt.h>
 #include <iostream>
 #include <memory>
 #include <ncurses.h>
 #include <string>
 #include <sys/ioctl.h>
+#include <unistd.h>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 int check_colors() {
@@ -96,21 +102,22 @@ void graphic() {
   }
 }
 
+volatile std::sig_atomic_t turnOff = false;
+void quitNonTui(int signal) { turnOff = true; }
+
 int main(int argc, char *argv[]) {
   int tuiMode = true;
+  int watchEff = false;
   namespace fs = std::filesystem;
   fs::path outfile;
   const struct option cmd[] = {{"no-tui", no_argument, &tuiMode, 0},
                                {"help", no_argument, nullptr, 'h'},
-                               {"outfile", no_argument, nullptr, 'o'},
+                               {"outfile", required_argument, nullptr, 'o'},
+                               {"watch-efficient", no_argument, nullptr, 'w'},
                                {nullptr, 0, nullptr, 0}};
   int opt;
   int opt_idx;
-  while ((opt = getopt_long(argc, argv, "h:o:", cmd, &opt_idx)) != -1) {
-    if (opt == 0) {
-      // flag is set
-      continue;
-    }
+  while ((opt = getopt_long(argc, argv, "ho:w", cmd, &opt_idx)) != -1) {
     switch (opt) {
     case 'h':
       tuiMode = false;
@@ -118,10 +125,9 @@ int main(int argc, char *argv[]) {
       exit(EXIT_SUCCESS);
     case 'o':
       outfile = fs::path(optarg);
-      if (!fs::exists(outfile)) {
-        std::cout << "Output file " << outfile << " does not exist!\n";
-        exit(EXIT_FAILURE);
-      }
+      break;
+    case 'w':
+      watchEff = true;
       break;
     case '?':
       std::cout << "Wrong option\n";
@@ -135,6 +141,9 @@ int main(int argc, char *argv[]) {
 
   // No tui mode here
   // Currently no checks here but yeah add in future
+  std::signal(SIGHUP, quitNonTui);
+  std::signal(SIGINT, quitNonTui);
+  std::signal(SIGTERM, quitNonTui);
 
   std::array<unsigned int, MAX_UVM_PIDS> uvm_pids = {};
   UVM_TOOLS_GET_UVM_PIDS_PARAMS pid_query;
@@ -146,20 +155,39 @@ int main(int argc, char *argv[]) {
   int uvm_tools_fd =
       openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
   // std::cout<<"Opened "<<uvm_tools_fd<<'\n';
-  int ret = ioctl(uvm_tools_fd, UVM_TOOLS_GET_UVM_PIDS, (void *)(&pid_query));
-  if (ret == -1) {
-    std::cout << "Error!\n";
-    return 0;
-  }
-  for(auto&x : uvm_pids) {
-    if(x) {
-      DataPuller info(x);
-      info.printInfo(outfile);
-      std::cout<<"---------------\n";
+  std::unordered_map<pid_t, std::shared_ptr<DataPuller>> pidMap;
+  while (true) {
+    std::fstream outStream(outfile, std::fstream::out | std::fstream::trunc);
+    outStream.flush();
+    int ret = ioctl(uvm_tools_fd, UVM_TOOLS_GET_UVM_PIDS, (void *)(&pid_query));
+    if (ret == -1) {
+      std::cout << "Error!\n";
+      break;
+    }
+    for (auto &x : uvm_pids) {
+      if (x) {
+        if (!pidMap.contains(x)) {
+          std::shared_ptr<DataPuller> puller = std::make_shared<DataPuller>(x);
+          if (puller->current_mode == NON_USABLE){
+            // std::cerr<<"Nonusable puller\n";
+            continue;
+          }
+          pidMap[x] = std::move(puller);
+        }
+       pidMap[x]->updateValues();
+      }
+    }
+    for (auto &[_, puller] : pidMap) {
+      puller->printInfo(outStream);
+      outStream << "---------------\n";
+    }
+    outStream.flush();
+    if (turnOff || (!watchEff)) {
+      break;
     }
   }
   close(uvm_tools_fd);
   // std::cout<<"Closed "<<uvm_tools_fd<<'\n';
 
-  std::cout << "\n";
+  std::cout << "\n#####################\n";
 }

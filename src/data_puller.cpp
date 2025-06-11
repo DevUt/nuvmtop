@@ -15,7 +15,6 @@
 #include "data_puller.hpp"
 
 std::array<unsigned int, MAX_UVM_PIDS> uvm_pids;
-ModeType current_mode = SNAPSHOT_MODE;
 
 int get_uvm_fd(int pid) {
   int nvidia_uvm_fd = -1;
@@ -48,14 +47,13 @@ int get_uvm_fd(int pid) {
   return nvidia_uvm_fd;
 }
 
-int DataPuller::compute_parameters(control_fetch_params *process) {
+int DataPuller::enable_tracker(control_fetch_params *process) {
 
   // uuid *uuids = (uuid *)calloc(NVIDIA_MAX_PROCESSOR, sizeof(uuid));
   std::unique_ptr<uuid[]> uuids(new uuid[NVIDIA_MAX_PROCESSOR]());
 
   UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS event_tracker;
   UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS ioctl_input;
-  UVM_TOOLS_GET_CURRENT_COUNTER_VALUES_PARAMS current_value_fetch;
   pid_fd = syscall(SYS_pidfd_open, process->pid, 0);
 
   int process_uvm_fd = get_uvm_fd(process->pid);
@@ -87,6 +85,7 @@ int DataPuller::compute_parameters(control_fetch_params *process) {
   uvm_tools_fd[0] = openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
   ioctl(uvm_tools_fd[0], UVM_IOCTL_TOOLS_GET_GPUs_UUID, (void *)&ioctl_input);
 
+  int cnt = 0;
   for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
 
     if (uuids[i].uuid[0] && !process->is_event_tracker_setup[i]) {
@@ -94,9 +93,6 @@ int DataPuller::compute_parameters(control_fetch_params *process) {
           openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
 
       process->counterbuffer[i] = make_aligned_array(16);
-      current_value_fetch.device_id = i;
-      current_value_fetch.tablePtr =
-          (unsigned long)process->counterbuffer[i].get();
 
       event_tracker.allProcessors = 0;
       event_tracker.controlBuffer =
@@ -109,35 +105,63 @@ int DataPuller::compute_parameters(control_fetch_params *process) {
 
       process->is_event_tracker_setup[i] = 1;
 
-      ioctl(uvm_tools_fd[i + 1], UVM_TOOLS_GET_CURRENT_COUNTER_VALUES,
-            (void *)&current_value_fetch);
-
       ioctl(uvm_tools_fd[i + 1], UVM_IOCTL_TOOLS_ENABLE_COUNTERS,
             (void *)&counter_enable);
+      cnt++;
     }
   }
   close(process_fd);
-  return 0;
+  return cnt;
 }
 
-void DataPuller::printInfo(std::filesystem::path outfile) {
+void DataPuller::updateValues() {
+  UVM_TOOLS_GET_CURRENT_COUNTER_VALUES_PARAMS current_value_fetch;
+  for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
+    current_value_fetch.device_id = i;
+    current_value_fetch.tablePtr =
+        (unsigned long)proc_fetch.counterbuffer[i].get();
+    ioctl(uvm_tools_fd[i + 1], UVM_TOOLS_GET_CURRENT_COUNTER_VALUES,
+          (void *)&current_value_fetch);
+  }
+}
+
+void DataPuller::printGPUInfo(std::fstream &outStream, int i) {
+  outStream << "Processor ID: " << i << '\n';
+  outStream << "Number of Faults: " << proc_fetch.counterbuffer[i][9] << '\n';
+  outStream << "Evictions: " << proc_fetch.counterbuffer[i][10] << '\n';
+  outStream << "Resident Pages: " << proc_fetch.counterbuffer[i][11] << '\n';
+  outStream << "Physical Memory Allocated: " << proc_fetch.counterbuffer[i][13]
+            << '\n';
+  outStream << "Memory Evicted of other Processes: "
+            << proc_fetch.counterbuffer[i][14] << '\n';
+  outStream << "Thrashed Pages: " << proc_fetch.counterbuffer[i][15] << '\n';
+  outStream << "\n\n";
+}
+
+void DataPuller::printCPUInfo(std::fstream &outStream) {
+  int i = 0;
+  outStream << "Processor ID: " << i << '\n';
+  outStream << "Number of Faults: " << proc_fetch.counterbuffer[i][2] << '\n';
+  outStream << "Evictions: " << 0 << '\n';
+  outStream << "Resident Pages: " << proc_fetch.counterbuffer[i][12] << '\n';
+  outStream << "Physical Memory Allocated: " << proc_fetch.counterbuffer[i][13]
+            << '\n';
+  outStream << "Memory Evicted of other Processes: "
+            << proc_fetch.counterbuffer[i][14] << '\n';
+  outStream << "Thrashed Pages: " << proc_fetch.counterbuffer[i][15] << '\n';
+  outStream << "\n\n";
+}
+
+void DataPuller::printInfo(std::fstream &outStream) {
   using namespace std;
-  fstream outStream(outfile);
   outStream << "Pid: " << proc_fetch.pid << '\n';
-  for (int i = 1; i < NVIDIA_MAX_PROCESSOR; i++) {
+  for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
     if (proc_fetch.is_event_tracker_setup[i]) {
-      outStream << "Processor ID: " << i << '\n';
-      outStream << "Number of Faults: " << proc_fetch.counterbuffer[i][9]
-                << '\n';
-      outStream << "Evictions: " << proc_fetch.counterbuffer[i][10] << '\n';
-      outStream << "Resident Pages: " << proc_fetch.counterbuffer[i][11]
-                << '\n';
-      outStream << "Physical Memory Allocated: "
-                << proc_fetch.counterbuffer[i][13] << '\n';
-      outStream << "Memory Evicted of other Processes: "
-                << proc_fetch.counterbuffer[i][14] << '\n';
-      outStream << "Thrashed Pages: " << proc_fetch.counterbuffer[i][15]
-                << '\n';
+      if (i) {
+        printGPUInfo(outStream, i);
+      } else {
+        printCPUInfo(outStream);
+      }
     }
   }
 }
@@ -148,7 +172,10 @@ DataPuller::DataPuller(pid_t pid) {
   proc_fetch.is_event_tracker_setup.resize(NVIDIA_MAX_PROCESSOR);
 
   // Enable the tracker and fetch value once
-  compute_parameters(&proc_fetch);
+  int ret = enable_tracker(&proc_fetch);
+
+  // We have atleast one gpu 
+  current_mode = (ret > 1) ? USABLE : NON_USABLE;
 }
 
 DataPuller::~DataPuller() {
@@ -157,7 +184,7 @@ DataPuller::~DataPuller() {
       close(x);
     }
   }
-  if (pid_fd != -1){
+  if (pid_fd != -1) {
     close(pid_fd);
   }
 }

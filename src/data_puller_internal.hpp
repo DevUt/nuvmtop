@@ -44,7 +44,9 @@ current implementaion is not supporting mig
 #define MAX_UVM_PIDS 45
 enum ModeType {
     WATCH_MODE,
-    SNAPSHOT_MODE
+    SNAPSHOT_MODE,
+    NON_USABLE,
+    USABLE
 };
 
 
