@@ -105,6 +105,19 @@ void graphic() {
 volatile std::sig_atomic_t turnOff = false;
 void quitNonTui(int signal) { turnOff = true; }
 
+void usage() {
+  std::cout << "usage: ./nuvmtop --no-tui [--watch-efficient | -w] [--outfile "
+               "| -o ]  [--help | h] \n";
+  std::cout << "--no-tui\t" << "Don't use the under construction TUI\n";
+  std::cout
+      << "--outfile\t"
+      << "Output to this file. Tip: use /dev/stdout for on TERM display\n";
+  std::cout
+      << "--watch-efficient\t"
+      << "Watch the process and print to oufile\n \t\t\t Note that this will "
+         "automatically save the state just before the process exits\n";
+}
+
 int main(int argc, char *argv[]) {
   int tuiMode = true;
   int watchEff = false;
@@ -121,7 +134,6 @@ int main(int argc, char *argv[]) {
     switch (opt) {
     case 'h':
       tuiMode = false;
-      std::cout << "usage: ./nuvmtop --no-tui --help\n";
       exit(EXIT_SUCCESS);
     case 'o':
       outfile = fs::path(optarg);
@@ -130,7 +142,8 @@ int main(int argc, char *argv[]) {
       watchEff = true;
       break;
     case '?':
-      std::cout << "Wrong option\n";
+      // std::cout << "Wrong option\n";
+      usage();
       exit(EXIT_FAILURE);
     }
   }
@@ -168,13 +181,13 @@ int main(int argc, char *argv[]) {
       if (x) {
         if (!pidMap.contains(x)) {
           std::shared_ptr<DataPuller> puller = std::make_shared<DataPuller>(x);
-          if (puller->current_mode == NON_USABLE){
+          if (puller->current_mode == NON_USABLE) {
             // std::cerr<<"Nonusable puller\n";
             continue;
           }
           pidMap[x] = std::move(puller);
         }
-       pidMap[x]->updateValues();
+        pidMap[x]->updateValues();
       }
     }
     for (auto &[_, puller] : pidMap) {
