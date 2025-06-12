@@ -134,6 +134,7 @@ int main(int argc, char *argv[]) {
     switch (opt) {
     case 'h':
       tuiMode = false;
+      usage();
       exit(EXIT_SUCCESS);
     case 'o':
       outfile = fs::path(optarg);
