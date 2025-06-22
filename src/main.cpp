@@ -4,10 +4,10 @@
 #include "menu.hpp"
 #include "uvmtopWin.hpp"
 
-#include <bits/getopt_core.h>
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <getopt.h>
 #include <iostream>
@@ -106,14 +106,15 @@ volatile std::sig_atomic_t turnOff = false;
 void quitNonTui(int signal) { turnOff = true; }
 
 void usage() {
-  std::cout << "usage: ./nuvmtop --no-tui [--watch-efficient | -w] [--outfile "
-               "| -o ]  [--help | h] \n";
+  std::cout << "usage: ./nuvmtop --no-tui [--watch | -w] [--outfile "
+               "| -o ] [--only-last]  [--help | h] \n";
   std::cout << "--no-tui\t" << "Don't use the under construction TUI\n";
   std::cout
       << "--outfile\t"
       << "Output to this file. Tip: use /dev/stdout for on TERM display\n";
+  std::cout << "--only-last\t" << "Store only the last received value\n";
   std::cout
-      << "--watch-efficient\t"
+      << "--watch\t"
       << "Watch the process and print to oufile\n \t\t\t Note that this will "
          "automatically save the state just before the process exits\n";
 }
@@ -121,12 +122,14 @@ void usage() {
 int main(int argc, char *argv[]) {
   int tuiMode = true;
   int watchEff = false;
+  int onlyLast = false;
   namespace fs = std::filesystem;
   fs::path outfile;
   const struct option cmd[] = {{"no-tui", no_argument, &tuiMode, 0},
                                {"help", no_argument, nullptr, 'h'},
                                {"outfile", required_argument, nullptr, 'o'},
-                               {"watch-efficient", no_argument, nullptr, 'w'},
+                               {"only-last", no_argument, &onlyLast, 1},
+                               {"watch", no_argument, nullptr, 'w'},
                                {nullptr, 0, nullptr, 0}};
   int opt;
   int opt_idx;
@@ -170,9 +173,14 @@ int main(int argc, char *argv[]) {
       openat(AT_FDCWD, NVIDIA_UVM_TOOLS_PATH, O_RDWR | O_CLOEXEC);
   // std::cout<<"Opened "<<uvm_tools_fd<<'\n';
   std::unordered_map<pid_t, std::shared_ptr<DataPuller>> pidMap;
+  std::fstream outStream(outfile, std::fstream::out | std::fstream::trunc);
+  outStream.flush();
   while (true) {
-    std::fstream outStream(outfile, std::fstream::out | std::fstream::trunc);
-    outStream.flush();
+    if (onlyLast) {
+      outStream =
+          std::fstream(outfile, std::fstream::out | std::fstream::trunc);
+      outStream.flush();
+    }
     int ret = ioctl(uvm_tools_fd, UVM_TOOLS_GET_UVM_PIDS, (void *)(&pid_query));
     if (ret == -1) {
       std::cout << "Error!\n";
