@@ -125,7 +125,20 @@ void DataPuller::updateValues() {
   }
 }
 
-void DataPuller::printGPUInfo(std::fstream &outStream, int i) {
+void DataPuller::printGPUInfo(std::fstream &outStream, int i,
+                              bool onlyData = false) {
+  if (onlyData) {
+    outStream << proc_fetch.pid << ",";
+    outStream << i << ",";
+    outStream << proc_fetch.counterbuffer[i][9] << ',';
+    outStream << proc_fetch.counterbuffer[i][10] << ',';
+    outStream << proc_fetch.counterbuffer[i][11] << ',';
+    outStream << proc_fetch.counterbuffer[i][13] << ',';
+    outStream << proc_fetch.counterbuffer[i][14] << ',';
+    outStream << proc_fetch.counterbuffer[i][15];
+    outStream << "\n";
+    return;
+  }
   outStream << "Processor ID: " << i << '\n';
   outStream << "Number of Faults: " << proc_fetch.counterbuffer[i][9] << '\n';
   outStream << "Evictions: " << proc_fetch.counterbuffer[i][10] << '\n';
@@ -138,8 +151,20 @@ void DataPuller::printGPUInfo(std::fstream &outStream, int i) {
   outStream << "\n\n";
 }
 
-void DataPuller::printCPUInfo(std::fstream &outStream) {
+void DataPuller::printCPUInfo(std::fstream &outStream, bool onlyData = false) {
   int i = 0;
+  if (onlyData) {
+    outStream << proc_fetch.pid << ",";
+    outStream << i << ',';
+    outStream << proc_fetch.counterbuffer[i][2] << ',';
+    outStream << 0 << ',';
+    outStream << proc_fetch.counterbuffer[i][12] << ',';
+    outStream << proc_fetch.counterbuffer[i][13] << ',';
+    outStream << proc_fetch.counterbuffer[i][14] << ',';
+    outStream << proc_fetch.counterbuffer[i][15];
+    outStream << "\n";
+    return;
+  }
   outStream << "Processor ID: " << i << '\n';
   outStream << "Number of Faults: " << proc_fetch.counterbuffer[i][2] << '\n';
   outStream << "Evictions: " << 0 << '\n';
@@ -152,15 +177,16 @@ void DataPuller::printCPUInfo(std::fstream &outStream) {
   outStream << "\n\n";
 }
 
-void DataPuller::printInfo(std::fstream &outStream) {
+void DataPuller::printInfo(std::fstream &outStream, bool onlyData = false) {
   using namespace std;
-  outStream << "Pid: " << proc_fetch.pid << '\n';
+  if (!onlyData)
+    outStream << "Pid: " << proc_fetch.pid << "\n,"[onlyData];
   for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
     if (proc_fetch.is_event_tracker_setup[i]) {
       if (i) {
-        printGPUInfo(outStream, i);
+        printGPUInfo(outStream, i, onlyData);
       } else {
-        printCPUInfo(outStream);
+        printCPUInfo(outStream, onlyData);
       }
     }
   }
@@ -174,7 +200,7 @@ DataPuller::DataPuller(pid_t pid) {
   // Enable the tracker and fetch value once
   int ret = enable_tracker(&proc_fetch);
 
-  // We have atleast one gpu 
+  // We have atleast one gpu
   current_mode = (ret > 1) ? USABLE : NON_USABLE;
 }
 

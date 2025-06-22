@@ -108,9 +108,11 @@ volatile std::sig_atomic_t turnOff = false;
 void quitNonTui(int signal) { turnOff = true; }
 
 void usage() {
-  std::cout << "usage: ./nuvmtop --no-tui [--watch | -w] [--outfile "
+  std::cout << "usage: ./nuvmtop --no-tui [--csv] [--poll-time | p] [--watch | "
+               "-w] [--outfile "
                "| -o ] [--only-last]  [--help | h] \n";
   std::cout << "--no-tui\t" << "Don't use the under construction TUI\n";
+  std::cout << "--csv\t\t" << "Print in CSV format\n";
   std::cout << "--poll-time\t"
             << "Query the time at THIS millisecond intervals\n";
   std::cout
@@ -118,7 +120,7 @@ void usage() {
       << "Output to this file. Tip: use /dev/stdout for on TERM display\n";
   std::cout << "--only-last\t" << "Store only the last received value\n";
   std::cout
-      << "--watch\t"
+      << "--watch\t\t"
       << "Watch the process and print to oufile\n \t\t\t Note that this will "
          "automatically save the state just before the process exits\n";
 }
@@ -127,12 +129,14 @@ int main(int argc, char *argv[]) {
   int tuiMode = true;
   int watchEff = false;
   int onlyLast = false;
+  int csvMode = false;
   unsigned int pollTime = 0;
   namespace fs = std::filesystem;
   fs::path outfile;
   const struct option cmd[] = {{"no-tui", no_argument, &tuiMode, 0},
                                {"help", no_argument, nullptr, 'h'},
                                {"poll-time", required_argument, nullptr, 'p'},
+                               {"csv", no_argument, &csvMode, 1},
                                {"outfile", required_argument, nullptr, 'o'},
                                {"only-last", no_argument, &onlyLast, 1},
                                {"watch", no_argument, nullptr, 'w'},
@@ -189,15 +193,42 @@ int main(int argc, char *argv[]) {
   std::unordered_map<pid_t, std::shared_ptr<DataPuller>> pidMap;
   std::fstream outStream(outfile, std::fstream::out | std::fstream::trunc);
   outStream.flush();
+
+  constexpr std::array attributes{"PID",
+                                  "Processor Id",
+                                  "Number of Faults",
+                                  "Evictions",
+                                  "Resident Pages",
+                                  "Physical Memory Allocated",
+                                  "Memory Evicted of other Processes",
+                                  "Thrased Pages"};
+
+  if (csvMode) {
+    for (size_t i = 0; i < attributes.size(); i++) {
+      outStream << attributes[i] << ",\n"[i == attributes.size() - 1];
+    }
+  }
+
   while (true) {
     if (onlyLast) {
       outStream =
           std::fstream(outfile, std::fstream::out | std::fstream::trunc);
       outStream.flush();
+      if (csvMode) {
+        for (size_t i = 0; i < attributes.size(); i++) {
+          outStream << attributes[i] << ",\n"[i == attributes.size() - 1];
+        }
+      }
     }
     int ret = ioctl(uvm_tools_fd, UVM_TOOLS_GET_UVM_PIDS, (void *)(&pid_query));
     if (ret == -1) {
-      std::cout << "Error!\n";
+      std::cerr << "Error!\n"
+                << "Couldn't find UVM TOOLS Device\n"
+                << "Following maybe the reasons:\n"
+                << "\t1. You have not initalized atleast one process, just use "
+                   "nvtop and rerun this.\n"
+                << "\t2. You are not using the correct patched driver\n"
+                << "\t3. The gods are unhappy\n.";
       break;
     }
     for (auto &x : uvm_pids) {
@@ -214,8 +245,9 @@ int main(int argc, char *argv[]) {
       }
     }
     for (auto &[_, puller] : pidMap) {
-      puller->printInfo(outStream);
-      outStream << "---------------\n";
+      puller->printInfo(outStream, csvMode);
+      if (!csvMode)
+        outStream << "---------------\n";
     }
     outStream.flush();
     if (turnOff || (!watchEff)) {
