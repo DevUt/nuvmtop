@@ -4,6 +4,7 @@
 #include "menu.hpp"
 #include "uvmtopWin.hpp"
 
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
@@ -15,6 +16,7 @@
 #include <ncurses.h>
 #include <string>
 #include <sys/ioctl.h>
+#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 #include <utility>
@@ -109,6 +111,8 @@ void usage() {
   std::cout << "usage: ./nuvmtop --no-tui [--watch | -w] [--outfile "
                "| -o ] [--only-last]  [--help | h] \n";
   std::cout << "--no-tui\t" << "Don't use the under construction TUI\n";
+  std::cout << "--poll-time\t"
+            << "Query the time at THIS millisecond intervals\n";
   std::cout
       << "--outfile\t"
       << "Output to this file. Tip: use /dev/stdout for on TERM display\n";
@@ -123,17 +127,19 @@ int main(int argc, char *argv[]) {
   int tuiMode = true;
   int watchEff = false;
   int onlyLast = false;
+  unsigned int pollTime = 0;
   namespace fs = std::filesystem;
   fs::path outfile;
   const struct option cmd[] = {{"no-tui", no_argument, &tuiMode, 0},
                                {"help", no_argument, nullptr, 'h'},
+                               {"poll-time", required_argument, nullptr, 'p'},
                                {"outfile", required_argument, nullptr, 'o'},
                                {"only-last", no_argument, &onlyLast, 1},
                                {"watch", no_argument, nullptr, 'w'},
                                {nullptr, 0, nullptr, 0}};
   int opt;
   int opt_idx;
-  while ((opt = getopt_long(argc, argv, "ho:w", cmd, &opt_idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "ho:wp:", cmd, &opt_idx)) != -1) {
     switch (opt) {
     case 'h':
       tuiMode = false;
@@ -144,6 +150,14 @@ int main(int argc, char *argv[]) {
       break;
     case 'w':
       watchEff = true;
+      break;
+    case 'p':
+      try {
+        pollTime = std::stoi(optarg);
+      } catch (...) {
+        std::cerr << "Invalid poll time interval!\n";
+        exit(EXIT_FAILURE);
+      }
       break;
     case '?':
       // std::cout << "Wrong option\n";
@@ -207,6 +221,8 @@ int main(int argc, char *argv[]) {
     if (turnOff || (!watchEff)) {
       break;
     }
+    if (pollTime)
+      std::this_thread::sleep_for(std::chrono::milliseconds(pollTime));
   }
   close(uvm_tools_fd);
   // std::cout<<"Closed "<<uvm_tools_fd<<'\n';
