@@ -177,15 +177,17 @@ void DataPuller::printCPUInfo(std::fstream &outStream, bool onlyData = false) {
   outStream << "\n\n";
 }
 
-void DataPuller::printInfo(std::fstream &outStream, bool onlyData = false) {
+void DataPuller::printInfo(std::fstream &outStream, unsigned long long iter,bool onlyData = false) {
   using namespace std;
   if (!onlyData)
     outStream << "Pid: " << proc_fetch.pid << "\n,"[onlyData];
   for (int i = 0; i < NVIDIA_MAX_PROCESSOR; i++) {
     if (proc_fetch.is_event_tracker_setup[i]) {
       if (i) {
+        outStream<<iter<<',';
         printGPUInfo(outStream, i, onlyData);
       } else {
+        outStream<<iter<<',';
         printCPUInfo(outStream, onlyData);
       }
     }

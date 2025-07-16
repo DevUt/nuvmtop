@@ -4,6 +4,7 @@
 #include "menu.hpp"
 #include "uvmtopWin.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -19,6 +20,7 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -194,7 +196,8 @@ int main(int argc, char *argv[]) {
   std::fstream outStream(outfile, std::fstream::out | std::fstream::trunc);
   outStream.flush();
 
-  constexpr std::array attributes{"PID",
+  constexpr std::array attributes{"Iter",
+                                  "PID",
                                   "Processor Id",
                                   "Number of Faults",
                                   "Evictions",
@@ -209,6 +212,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  unsigned long long iter = 0;
   while (true) {
     if (onlyLast) {
       outStream =
@@ -231,7 +235,9 @@ int main(int argc, char *argv[]) {
                 << "\t3. The gods are unhappy\n.";
       break;
     }
-    for (auto &x : uvm_pids) {
+    bool update = false;
+    std::unordered_set<int> unique_pids(uvm_pids.begin(),uvm_pids.end());
+    for (auto &x : unique_pids) {
       if (x) {
         if (!pidMap.contains(x)) {
           std::shared_ptr<DataPuller> puller = std::make_shared<DataPuller>(x);
@@ -242,13 +248,17 @@ int main(int argc, char *argv[]) {
           pidMap[x] = std::move(puller);
         }
         pidMap[x]->updateValues();
+        update = true;
+        if(csvMode)
+          pidMap[x]->printInfo(outStream, iter, csvMode);
       }
     }
-    for (auto &[_, puller] : pidMap) {
-      puller->printInfo(outStream, csvMode);
-      if (!csvMode)
-        outStream << "---------------\n";
-    }
+    iter += update;
+    // for (auto &[_, puller] : pidMap) {
+    //   puller->printInfo(outStream, csvMode);
+    //   if (!csvMode)
+    //     outStream << "---------------\n";
+    // }
     outStream.flush();
     if (turnOff || (!watchEff)) {
       break;

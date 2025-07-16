@@ -18,7 +18,7 @@ public:
   ModeType current_mode;
   DataPuller(pid_t pid);
   ~DataPuller();
-  void printInfo(std::fstream &, bool);
+  void printInfo(std::fstream &, unsigned long long, bool);
   void updateValues();
 
 };
