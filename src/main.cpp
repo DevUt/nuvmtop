@@ -236,13 +236,20 @@ int main(int argc, char *argv[]) {
         if (!pidMap.contains(x)) {
           std::shared_ptr<DataPuller> puller = std::make_shared<DataPuller>(x);
           if (puller->current_mode == NON_USABLE) {
-            // std::cerr<<"Nonusable puller\n";
+            #ifdef DEBUG
+            std::cerr<<"Nonusable puller : "<<x<<std::endl;
+            #endif
+
             continue;
           }
           pidMap[x] = std::move(puller);
         }
         if(pidMap[x]->current_mode != DEAD_PROC)
           pidMap[x]->updateValues();
+        #ifdef DEBUG
+        else
+          std::cerr<<"Dead proc!: "<<x<<std::endl;
+        #endif
       }
     }
     for (auto &[pid, puller] : pidMap) {

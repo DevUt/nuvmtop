@@ -21,6 +21,7 @@ current implementaion is not supporting mig
 #define UVM_IOCTL_TOOLS_ENABLE_COUNTERS  60 
 #define UVM_TOOLS_GET_CURRENT_COUNTER_VALUES  81
 #define UVM_TOOLS_GET_UVM_PIDS  82
+#define UVM_TOOLS_VALIDATE_FD  83
 
 
 
@@ -46,7 +47,8 @@ enum ModeType {
     WATCH_MODE,
     SNAPSHOT_MODE,
     NON_USABLE,
-    USABLE
+    USABLE,
+    DEAD_PROC,
 };
 
 
@@ -104,6 +106,11 @@ typedef struct
     unsigned int     rmStatus;                                   // OUT
 } UVM_TOOLS_GET_UVM_PIDS_PARAMS;
 
+typedef struct
+{
+    unsigned int      uvmFd;                __attribute__ ((aligned (8)));  // IN 
+    unsigned int     rmStatus;                                   // OUT
+} UVM_TOOLS_VALIDATE_FD_PARAMS;
 
 struct AlignedDeleter {
     void operator()(void* ptr) const {
@@ -135,5 +142,5 @@ typedef struct{
 
 
 
-int get_uvm_fd(int pid);
+int get_uvm_fd(int pid, int pid_fd);
 void setup_eventtracker(uuid gpu_uuid,unsigned long* controlBuffer);

@@ -16,14 +16,17 @@
 
 std::array<unsigned int, MAX_UVM_PIDS> uvm_pids;
 
-int get_uvm_fd(int pid) {
+int get_uvm_fd(int pid, int pid_fd) {
   int nvidia_uvm_fd = -1;
+  int tool_fd = openat(AT_FDCWD,NVIDIA_UVM_TOOLS_PATH, O_RDWR|O_CLOEXEC);
 
   DIR *d;
   struct dirent *dir;
   char psf_path[2048];
   char proc_dir[1024];
   char *psf_realpath;
+  int fds[100];
+  UVM_TOOLS_VALIDATE_FD_PARAMS validateFd;
 
   sprintf(proc_dir, "/proc/%d/fd", pid);
   d = opendir(proc_dir);
@@ -38,13 +41,20 @@ int get_uvm_fd(int pid) {
           nvidia_uvm_fd = atoi(dir->d_name);
         }
         free(psf_realpath);
-        if (nvidia_uvm_fd >= 0)
-          break;
+        if (nvidia_uvm_fd >= 0) {
+          validateFd.uvmFd = syscall(SYS_pidfd_getfd, pid_fd, nvidia_uvm_fd, 0);
+          ioctl(tool_fd, UVM_TOOLS_VALIDATE_FD, (void *)&validateFd);
+
+          if (validateFd.rmStatus == 0) {
+            break;
+          }
+        }
       }
     }
     closedir(d);
   }
-  return nvidia_uvm_fd;
+  close(tool_fd);
+  return validateFd.uvmFd;
 }
 
 int DataPuller::enable_tracker(control_fetch_params *process) {
@@ -56,7 +66,7 @@ int DataPuller::enable_tracker(control_fetch_params *process) {
   UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS ioctl_input;
   pid_fd = syscall(SYS_pidfd_open, process->pid, 0);
 
-  int process_uvm_fd = get_uvm_fd(process->pid);
+  int process_uvm_fd = get_uvm_fd(process->pid, pid_fd);
 
   if (process_uvm_fd == -1) {
     std::cout << "Couln't get fd\n";
@@ -78,7 +88,7 @@ int DataPuller::enable_tracker(control_fetch_params *process) {
       UVM_COUNTER_NAME_THRASHING_PAGES;
 
   ioctl_input.tablePtr = (unsigned long)uuids.get();
-  volatile int process_fd = syscall(SYS_pidfd_getfd, pid_fd, process_uvm_fd, 0);
+  volatile int process_fd = process_uvm_fd;
   ioctl_input.uvmFd = process_fd;
   std::fill(uvm_tools_fd.begin(), uvm_tools_fd.end(), -1);
 
