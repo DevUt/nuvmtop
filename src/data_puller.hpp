@@ -20,5 +20,6 @@ public:
   ~DataPuller();
   void printInfo(std::fstream &, bool);
   void updateValues();
+  void destruct();
 
 };

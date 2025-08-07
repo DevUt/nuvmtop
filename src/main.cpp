@@ -241,10 +241,13 @@ int main(int argc, char *argv[]) {
           }
           pidMap[x] = std::move(puller);
         }
-        pidMap[x]->updateValues();
+        if(pidMap[x]->current_mode != DEAD_PROC)
+          pidMap[x]->updateValues();
       }
     }
-    for (auto &[_, puller] : pidMap) {
+    for (auto &[pid, puller] : pidMap) {
+      if(std::find(uvm_pids.begin(), uvm_pids.end(), pid) == uvm_pids.end())
+        puller->destruct();
       puller->printInfo(outStream, csvMode);
       if (!csvMode)
         outStream << "---------------\n";

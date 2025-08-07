@@ -204,7 +204,7 @@ DataPuller::DataPuller(pid_t pid) {
   current_mode = (ret > 1) ? USABLE : NON_USABLE;
 }
 
-DataPuller::~DataPuller() {
+void DataPuller::destruct() {
   for (auto &x : uvm_tools_fd) {
     if (x != -1) {
       close(x);
@@ -213,4 +213,10 @@ DataPuller::~DataPuller() {
   if (pid_fd != -1) {
     close(pid_fd);
   }
+  current_mode = DEAD_PROC;
+
+}
+
+DataPuller::~DataPuller() {
+  destruct();
 }
